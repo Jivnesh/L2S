@@ -2,9 +2,12 @@
 dir=./models/Dep_san
 train=./models/Dep_san/ud_pos_ner_dp_train_san
 dev=./models/Dep_san/ud_pos_ner_dp_dev_san
+dev_org=./data/ud_pos_ner_dp_dev_san
 TAGS=./data/san_tags
-
-
+declare -i dimension=5
+start_time=`date +%s`
+touch ./models/Dep_san/train_log.txt
+touch ./models/Dep_san/result_log.txt
 echo "#################################################################"
 echo "Deleting old generated files ... "
 echo "#################################################################"
@@ -33,11 +36,14 @@ echo "#################################################################"
 # --cost_to_go Estimating cost-to-go matrix based on dynamic oracle rathan than rolling-out
 # --holdout_period 20
 # # --passes 3
+# --ignore w --dictionary w:embedding.dict --dictionary_path $dir
 # --early_terminate 3
-vw  -d $train.vw -k -c --search_rollin mix_per_roll \
+# --ignore v --dictionary v:embedding_size_$dimension.dict --dictionary_path $dir
+
+vw  -d $train.vw -k -c --search_rollin mix_per_roll --ignore w --dictionary w:embedding_size_$dimension.dict --dictionary_path $dir \
 --progress 100 --holdout_off --passes 3 --search_task dep_parser --search 23 --search_alpha 1e-5  \
 --search_rollout oracle -f $dir/dep.model --search_history_length 3 --search_no_caching \
--b 25 --root_label 4 --num_label 23 --nn 5 --ftrl
+-b 30 --root_label 4 --num_label 23 --nn 5 --ftrl 2>&1 | tee $dir/train_log.txt
 
 # vw  -d $train.vw -k -c --search_rollin mix_per_roll --passes 3 --search_task dep_parser --search 46 --search_alpha 1e-5  --search_rollout oracle  --holdout_off -f $dir/dep.model --search_history_length 3 --search_no_caching -b 25 --root_label 45 --num_label 46 --nn 5 --ftrl
 # -passes 5
@@ -47,7 +53,9 @@ echo "#################################################################"
 # -p [ --predictions ] arg     File to output predictions to
 # -i [ --initial_regressor ] arg  Initial regressor(s)
 # -t [ --testonly ]                Ignore label information and just test
-vw -d $dev.vw -t -i $dir/dep.model -p $dir/dep.test.predictions --progress 10
+# --ignore v --dictionary v:embedding_size_$dimension.dict --dictionary_path $dir
+
+vw -d $dev.vw -t -i $dir/dep.model -p $dir/dep.test.predictions --progress 10 --dictionary w:embedding_size_$dimension.dict --dictionary_path $dir
 # $dir/dep.model 
 echo "#################################################################"
 echo "Getting parse file from model prediction ... "
@@ -57,5 +65,15 @@ python2 ./code/parse_test_result.py $dev.vw $dir/dep.test.predictions $TAGS > $d
 echo "#################################################################"
 echo "Getting UAS and LAS score ... "
 echo "#################################################################"
-python2 ./code/evaluate_san.py $dir/dep.test.parse $dev
+python2 ./code/evaluate_san.py $dir/dep.test.parse $dev_org 2>&1 | tee $dir/result_log.txt
 # python2 evaluate.py $dir/dep.test.parse $dev
+
+end_time=`date +%s`
+echo execution time was `expr $end_time - $start_time` s.
+
+ # Test 67: classification with data from dictionaries
+# (eg embeddings or gazetteers) -- note that this is impossible without
+# dictionaries because --ignore w; also test to make sure gzipped dicts
+# work and dictionary redundancy checking works
+# vw -k -c -d train-sets/dictionary_test.dat --binary --ignore w --holdout_off --passes 32 --dictionary w:dictionary_test.dict \
+# --dictionary w:dictionary_test.dict.gz --dictionary_path train-sets 
